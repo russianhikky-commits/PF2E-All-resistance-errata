@@ -1,0 +1,51 @@
+{
+  "pf2e-all-resistance-errata": {
+    "settings": {
+      "autoApplyBest": {
+        "name": "Автоматически выбирать лучшее сопротивление",
+        "hint": "Не показывать диалог выбора. Модуль сам применит сопротивление к типу урона, дающему наименьший итоговый урон."
+      },
+      "showChatMessage": {
+        "name": "Показывать в чате результат применения",
+        "hint": "Публиковать в чат сообщение о том, к какому типу урона применено сопротивление и каким стал итоговый урон."
+      },
+      "chatPrivacy": {
+        "name": "Приватность сообщений",
+        "hint": "Кому видны сообщения модуля. «По цели»: если атакован персонаж игрока — всем, если НПС/монстр — только ГМ.",
+        "choices": {
+          "auto": "По цели (игрок — всем, НПС — только ГМ)",
+          "public": "Всегда всем",
+          "gm": "Всегда только ГМ"
+        }
+      }
+    },
+    "dialog": {
+      "title": "Сопротивление всему урону",
+      "damageReceived": "Полученный урон: {list}",
+      "resistancesLabel": "Сопротивления:",
+      "damageAfterResistances": "Урон после сопротивлений:",
+      "chooseResistance": "Выберите сопротивление:",
+      "total": "Всего: {value}",
+      "finalDamage": "Итоговый урон:",
+      "chipAll": "{value} Весь урон",
+      "apply": "Применить",
+      "warningNotApplicable": "Сопротивление не действует на этот тип урона (исключение)",
+      "warningAlreadyHave": "Уже есть сопротивление «{label} {value}» — этот выбор не изменит итог",
+      "warningCapped": "Резист ограничен {applied} (урона этого типа всего {total})"
+    },
+    "chat": {
+      "title": "🛡 Resistance {value} to all damage",
+      "autoSuffix": " (авто)",
+      "appliedTo": "{name}: применено к {type}",
+      "notApplicable": "— не действует (исключение)",
+      "damageChanged": "Урон: {before} → {after}",
+      "speakerAlias": "Resistance to All Damage"
+    },
+    "notifications": {
+      "active": "PF2e All Resistance: активно",
+      "notFound": "PF2e All Resistance: не найден Actor.applyDamage.",
+      "errorDamage": "PF2e All Resistance: ошибка применения урона. Смотрите F12 Console.",
+      "errorLoad": "PF2e All Resistance: ошибка при загрузке модуля. Смотрите F12 Console."
+    }
+  }
+}

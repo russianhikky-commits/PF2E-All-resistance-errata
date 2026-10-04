@@ -1,0 +1,34 @@
+{
+  "id": "pf2e-all-resistance-errata",
+  "title": "PF2e All Damage Resistance (Errata)",
+  "description": "<p>Intercepts PF2e applyDamage for multi-type damage against Resistance to All Damage and applies the resistance once to a selected damage type.</p>",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14"
+  },
+  "authors": [
+    {
+      "name": "RussianHikky",
+      "flags": {}
+    }
+  ],
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json",
+      "flags": {}
+    },
+    {
+      "lang": "ru",
+      "name": "Русский",
+      "path": "lang/ru.json",
+      "flags": {}
+    }
+  ],
+  "flags": {}
+}
