@@ -3,8 +3,11 @@
   "title": "PF2e All Damage Resistance (Errata)",
   "description": "<p>Intercepts PF2e applyDamage for multi-type damage against Resistance to All Damage and applies the resistance once to a selected damage type.</p>",
   "version": "1.0.0",
-  "manifest": "https://github.com/russianhikky-commits/PF2E-All-resistance-errata/blob/main/module.json",
-  "download": "https://github.com/russianhikky-commits/PF2E-All-resistance-errata/releases/download/v1.0.0/pf2e-all-resistance-errata.1.0.0.rar",
+  "url": "https://github.com/russianhikky-commits/PF2E-All-resistance-errata/",
+  "manifest": "https://github.com/russianhikky-commits/PF2E-All-resistance-errata/releases/latest/download/module.json",
+  "download": "https://github.com/russianhikky-commits/PF2E-All-resistance-errata/releases/download/v1.0.0/pf2e-all-resistance-errata.1.0.0.zip",
+  "license": "https://github.com/russianhikky-commits/PF2E-All-resistance-errata/blob/main/LICENSE",
+  "readme": "https://github.com/russianhikky-commits/PF2E-All-resistance-errata/blob/main/README.md",
   "compatibility": {
     "minimum": "14",
     "verified": "14"
