@@ -1,0 +1,1 @@
+# PF2E-All-resistance-errata
