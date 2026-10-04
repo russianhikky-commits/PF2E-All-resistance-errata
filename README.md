@@ -36,6 +36,7 @@ resistance, the module does nothing — everything works as in vanilla PF2e.
 
 1. Extract the module folder into `Data/modules/pf2e-all-resistance-errata/`.
 2. Ensure the structure is:
+```
 pf2e-all-resistance-errata/
 ├── module.json
 ├── README.md
@@ -44,6 +45,7 @@ pf2e-all-resistance-errata/
 └── lang/
 ├── en.json
 └── ru.json
+```
 3. Reload Foundry (F5).
 4. Enable the module in **Manage Modules**.
 
@@ -117,6 +119,7 @@ force, ghost-touch, spirit, vitality).
 
 1. Распакуй папку модуля в `Data/modules/pf2e-all-resistance-errata/`.
 2. Убедись, что структура такая:
+```
 pf2e-all-resistance-errata/
 ├── module.json
 ├── README.md
@@ -125,6 +128,7 @@ pf2e-all-resistance-errata/
 └── lang/
 ├── en.json
 └── ru.json
+```
 3. Перезагрузи Foundry.
 4. Включи модуль в **Управление модулями**.
 
