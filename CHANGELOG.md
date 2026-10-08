@@ -1,25 +1,28 @@
 # Changelog
 
-## v1.1.0
-
-**Main changes**
-- Resistances now trigger once per effect, not once per damage type.
-- Removed the module's separate chat card. All information is now shown in the native PF2e message — a small (i) icon next to "X takes N damage".
-
-**Added**
-- A dialog opens for each applicable resistance, one after another, so you can choose which damage type it applies to.
-- If a resistance only has one valid damage type, it is applied automatically — no dialog.
-- New setting "Automatically select best resistance" — when enabled, no dialog is shown at all; the module picks for you.
-- Support for area damage, spells, weapons and other IWR types — they are now correctly detected and appear in the tooltip.
-- Tooltip shows which damage type each resistance was applied to (debug setting).
-
-**Changed**
-- Some settings are now **client-side** — each player decides for themselves whether to use auto-select or not. These are "Automatically select best resistance" and "Debug: show applied damage type". All other settings remain shared across the whole world.
-- The active resistance in the dialog is now highlighted in red, matching the old "Resistance to All Damage" look.
+## v1.1.1
 
 **Fixed**
-- Magical damage is no longer treated as non-magical (important for ghosts and similar creatures with double resistance vs non-magical).
-- Weakness to all damage no longer overrides a more specific weakness (e.g. weakness to cold).
+- Immunities are now handled correctly.
+
+## v1.1.0
+
+### Added
+- Native PF2e tooltip integration: applied resistances and weaknesses now appear in the standard "X takes N damage" chat card (info icon).
+- Sequential dialogs for multiple applicable resistances. Each resistance is applied to one damage instance of your choice.
+- Auto-apply setting for resistances with a single valid target.
+- Option to show the damage type each resistance was applied to (debug).
+- `IWR Types` (area-damage, spells, weapons, etc.) are now correctly detected and displayed.
+
+### Changed
+- **Client-scoped settings**: `Automatically select best resistance` and the debug toggle are now per-user. Each client can choose whether to use the selection dialog or auto-apply. World-scoped settings (`allResEnabled`, `errataIWR`, `showChatMessage`) remain shared across all users.
+- Removed the custom chat card. All breakdown info is now shown inside the PF2e damage message.
+- Resistances are no longer applied once per damage instance — each resistance triggers once per effect, as per errata.
+- Active resistance chip highlighting uses the old "all damage" red palette.
+
+### Fixed
+- Magical damage is no longer treated as non-magical in `doubleVs` checks.
+- `all-damage` weakness no longer overrides more specific weaknesses.
 
 ## v1.0.0
 
