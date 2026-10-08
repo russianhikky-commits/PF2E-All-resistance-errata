@@ -152,22 +152,13 @@ const CSS = `
     color: #FF1818 !important;
     background: rgba(255, 24, 24, 0.14) !important;
   }
-  .pf2e-ar-dmg-before {
-    opacity: 0.45;
-    font-weight: 500;
-  }
-  .pf2e-ar-dmg-arrow {
-    opacity: 0.35;
-    margin: 0 6px;
-    font-weight: 400;
-    font-size: 0.9em;
-  }
+  .pf2e-ar-dmg-before { opacity: 0.45; font-weight: 500; }
+  .pf2e-ar-dmg-arrow { opacity: 0.35; margin: 0 6px; font-weight: 400; font-size: 0.9em; }
   .pf2e-ar-dmg-after {
-    font-weight: 700;
-    cursor: help;
-    text-decoration: underline dotted;
-    text-underline-offset: 4px;
+    font-weight: 700; cursor: help;
+    text-decoration: underline dotted; text-underline-offset: 4px;
   }
+  .pf2e-ar-dmg-immune { opacity: 0.4; text-decoration: line-through; font-weight: 500; }
   .pf2e-ar-applied {
     padding: 14px 16px; border-radius: 5px;
     background: rgba(255, 255, 255, 0.04);
@@ -316,6 +307,25 @@ function iwrMatchesType(iwr, instanceType) {
   return false;
 }
 
+function immunityAppliesTo(immunity, instance, damage, rollOptions) {
+  if (!immunity || immunity.ignored) return false;
+  const type = instance?.type;
+  if (!type) return false;
+  if (!iwrMatchesType(immunity, type)) return false;
+  if (typeof immunity.test === "function") {
+    try { return !!immunity.test(buildInstanceOptions(instance, damage, rollOptions)); }
+    catch (e) {}
+  }
+  return immunity.type === "all-damage" || immunity.type === type;
+}
+
+function findImmunityFor(immunities, instance, damage, rollOptions) {
+  for (const imm of immunities) {
+    if (immunityAppliesTo(imm, instance, damage, rollOptions)) return imm;
+  }
+  return null;
+}
+
 function resistanceAppliesTo(resistance, instance, damage, rollOptions) {
   if (!resistance || resistance.ignored) return false;
   const type = instance?.type;
@@ -372,7 +382,8 @@ function isEffectScopedIWR(element) {
   return true;
 }
 
-function computeAppliedWeaknesses(actor, instances, damage, rollOptions) {
+function computeAppliedWeaknesses(actor, instances, damage, rollOptions, immunedSet) {
+  const skip = immunedSet instanceof Set ? immunedSet : new Set();
   const weaknesses = (actor.attributes?.weaknesses ?? []).filter(
     (w) => !w.ignored && (Number(w.value) || 0) > 0
   );
@@ -382,7 +393,9 @@ function computeAppliedWeaknesses(actor, instances, damage, rollOptions) {
 
   for (const w of weaknesses) {
     if (!isEffectScopedIWR(w)) continue;
-    if (weaknessAppliesToEffect(w, instances, damage, rollOptions)) {
+    const checkable = instances.filter((_, i) => !skip.has(i));
+    if (checkable.length === 0) continue;
+    if (weaknessAppliesToEffect(w, checkable, damage, rollOptions)) {
       const value = Number(w.value) || 0;
       effectApps.push({ weakness: w, value });
       used.add(w);
@@ -390,6 +403,7 @@ function computeAppliedWeaknesses(actor, instances, damage, rollOptions) {
   }
 
   for (let i = 0; i < instances.length; i++) {
+    if (skip.has(i)) continue;
     const inst = instances[i];
     const candidates = weaknesses.filter((w) => {
       if (used.has(w)) return false;
@@ -413,8 +427,6 @@ function computeAppliedWeaknesses(actor, instances, damage, rollOptions) {
   return { instanceApps, effectApps, effectBonus };
 }
 
-// ============== IWR injection into PF2e chat message ==============
-
 function compareResistanceSpecificity(a, b) {
   if (a.value !== b.value) return a.value - b.value;
   const scoreOf = (r) => {
@@ -433,7 +445,16 @@ function buildIWRApplications(simState, weaknessInstApps, effectApps) {
   const apps = [];
   const debug = shouldShowDebugType();
 
-  // Effect-scoped weaknesses: no specific target instance, so no debug suffix.
+  for (const s of simState) {
+    if (s.immuned && s.immunity) {
+      apps.push({
+        category: "immunity",
+        type: iwrTypeLabelLower(s.immunity.type, s.immunity),
+        adjustment: -s.originalRaw,
+      });
+    }
+  }
+
   for (const ea of effectApps) {
     apps.push({
       category: "weakness",
@@ -441,37 +462,28 @@ function buildIWRApplications(simState, weaknessInstApps, effectApps) {
       adjustment: ea.value,
     });
   }
-
-  // Per-instance weaknesses: have a target instance.
   for (const ia of weaknessInstApps) {
     let typeStr = iwrTypeLabelLower(ia.weakness.type, ia.weakness);
     if (debug) {
       const s = simState[ia.instanceIndex];
       if (s) typeStr = `${typeStr} → ${s.label.toLowerCase()}`;
     }
-    apps.push({
-      category: "weakness",
-      type: typeStr,
-      adjustment: ia.value,
-    });
+    apps.push({ category: "weakness", type: typeStr, adjustment: ia.value });
   }
 
-  // Resistances: pick winner per instance and, if debug, append target type.
   for (const s of simState) {
+    if (s.immuned) continue;
     if (!s.assignedResistances || s.assignedResistances.length === 0) continue;
     let best = s.assignedResistances[0];
     for (const a of s.assignedResistances) {
       if (compareResistanceSpecificity(a, best) > 0) best = a;
     }
+    const preResistance = Math.max(0, s.original + s.weakness);
+    const actualReduction = Math.min(best.value, preResistance);
+    if (actualReduction <= 0) continue;
     let typeStr = iwrTypeLabelLower(best.resistance.type, best.resistance);
-    if (debug) {
-      typeStr = `${typeStr} → ${s.label.toLowerCase()}`;
-    }
-    apps.push({
-      category: "resistance",
-      type: typeStr,
-      adjustment: -best.value,
-    });
+    if (debug) typeStr = `${typeStr} → ${s.label.toLowerCase()}`;
+    apps.push({ category: "resistance", type: typeStr, adjustment: -actualReduction });
   }
 
   return apps;
@@ -481,15 +493,14 @@ function injectIWRSpan(content, applications) {
   if (!applications || applications.length === 0) return content;
   if (typeof content !== "string" || !content) return content;
 
-  const cleaned = content.replace(
-    /<span class="iwr"[^>]*>[\s\S]*?<\/span>\s*/g,
-    ""
-  );
+  const cleaned = content
+    .replace(/<span[^>]*class=["'][^"']*\biwr\b[^"']*["'][^>]*>[\s\S]*?<\/span>/gi, "")
+    .replace(/<span[^>]*data-applications=["'][^"']*["'][^>]*>[\s\S]*?<\/span>/gi, "");
 
   const json = JSON.stringify(applications).replace(/"/g, "&quot;");
   const iwrSpan = `<span class="iwr" data-visibility="all" data-applications="${json}"><i class="fa-solid fa-circle-info small"></i></span>`;
 
-  const re = /(<span class="statements">[\s\S]*?<\/span>)\s*(<button)/;
+  const re = /(<span[^>]*class=["'][^"']*\bstatements\b[^"']*["'][^>]*>[\s\S]*?<\/span>)\s*(<button)/;
   if (re.test(cleaned)) {
     return cleaned.replace(re, `$1\n        ${iwrSpan}\n        $2`);
   }
@@ -521,13 +532,21 @@ Hooks.on("preCreateChatMessage", (message) => {
   }
 });
 
-// ============== Main pipeline ==============
-
 async function runSequentialDialogs(actor, original, params, instances, damage, rollOptions) {
   const targetName = params.token?.name ?? actor.name;
 
+  const immunities = (actor.attributes?.immunities ?? []).filter(i => i && !i.ignored);
+  const immunedByInstance = new Map();
+  for (let i = 0; i < instances.length; i++) {
+    const imm = findImmunityFor(immunities, instances[i], damage, rollOptions);
+    if (imm) immunedByInstance.set(i, imm);
+  }
+  const immunedSet = new Set(immunedByInstance.keys());
+
+  if (immunedSet.size === instances.length) return null;
+
   const { instanceApps: weaknessInstApps, effectApps, effectBonus } = computeAppliedWeaknesses(
-    actor, instances, damage, rollOptions
+    actor, instances, damage, rollOptions, immunedSet
   );
   const weaknessByInstance = new Map();
   const weaknessLabelsByInstance = new Map();
@@ -544,9 +563,8 @@ async function runSequentialDialogs(actor, original, params, instances, damage, 
     r => r && !r.ignored && (Number(r.value) || 0) > 0
   );
   const applicableRes = allRes.filter(res =>
-    instances.some(inst => resistanceAppliesTo(res, inst, damage, rollOptions))
+    instances.some((inst, i) => !immunedSet.has(i) && resistanceAppliesTo(res, inst, damage, rollOptions))
   );
-
   const sortedRes = [...applicableRes].sort((a, b) =>
     (Number(b.value) || 0) - (Number(a.value) || 0)
   );
@@ -554,23 +572,30 @@ async function runSequentialDialogs(actor, original, params, instances, damage, 
   const plan = sortedRes.map(res => {
     const candidates = [];
     for (let i = 0; i < instances.length; i++) {
+      if (immunedSet.has(i)) continue;
       if (resistanceAppliesTo(res, instances[i], damage, rollOptions)) candidates.push(i);
     }
     return { res, candidates, needsDialog: candidates.length > 1 };
+  }).filter(p => p.candidates.length > 0);
+
+  const simState = instances.map((inst, i) => {
+    const immuned = immunedSet.has(i);
+    return {
+      index: i, type: inst.type,
+      label: damageTypeLabel(inst.type),
+      color: colorFor(inst.type),
+      original: immuned ? 0 : inst.total,
+      originalRaw: inst.total,
+      immuned,
+      immunity: immunedByInstance.get(i) ?? null,
+      weakness: immuned ? 0 : (weaknessByInstance.get(i) ?? 0),
+      weaknessLabels: immuned ? [] : (weaknessLabelsByInstance.get(i) ?? []),
+      assignedResistances: [],
+    };
   });
 
-  const simState = instances.map((inst, i) => ({
-    index: i,
-    type: inst.type,
-    label: damageTypeLabel(inst.type),
-    color: colorFor(inst.type),
-    original: inst.total,
-    weakness: weaknessByInstance.get(i) ?? 0,
-    weaknessLabels: weaknessLabelsByInstance.get(i) ?? [],
-    assignedResistances: [],
-  }));
-
   function currentValue(s) {
+    if (s.immuned) return 0;
     let maxRed = 0;
     for (const a of s.assignedResistances) {
       if (a.value > maxRed) maxRed = a.value;
@@ -595,13 +620,11 @@ async function runSequentialDialogs(actor, original, params, instances, damage, 
   for (const p of autoPass) {
     const { res, candidates } = p;
     if (!candidates.length) continue;
-    let chosen;
-    let bestRed = -1;
+    let chosen, bestRed = -1;
     for (const idx of candidates) {
       const cur = currentValue(simState[idx]);
       const existing = simState[idx].assignedResistances.length > 0
-        ? Math.max(...simState[idx].assignedResistances.map(a => a.value))
-        : 0;
+        ? Math.max(...simState[idx].assignedResistances.map(a => a.value)) : 0;
       const newMax = Math.max(existing, Number(res.value) || 0);
       const newVal = Math.max(0, simState[idx].original + simState[idx].weakness - newMax);
       const reduction = cur - newVal;
@@ -623,8 +646,7 @@ async function runSequentialDialogs(actor, original, params, instances, damage, 
       for (const idx of candidates) {
         const cur = currentValue(simState[idx]);
         const existing = simState[idx].assignedResistances.length > 0
-          ? Math.max(...simState[idx].assignedResistances.map(a => a.value))
-          : 0;
+          ? Math.max(...simState[idx].assignedResistances.map(a => a.value)) : 0;
         const newMax = Math.max(existing, Number(res.value) || 0);
         const newVal = Math.max(0, simState[idx].original + simState[idx].weakness - newMax);
         const reduction = cur - newVal;
@@ -641,8 +663,7 @@ async function runSequentialDialogs(actor, original, params, instances, damage, 
         for (const idx of candidates) {
           const cur = currentValue(simState[idx]);
           const existing = simState[idx].assignedResistances.length > 0
-            ? Math.max(...simState[idx].assignedResistances.map(a => a.value))
-            : 0;
+            ? Math.max(...simState[idx].assignedResistances.map(a => a.value)) : 0;
           const newMax = Math.max(existing, Number(res.value) || 0);
           const newVal = Math.max(0, simState[idx].original + simState[idx].weakness - newMax);
           const reduction = cur - newVal;
@@ -668,56 +689,119 @@ async function runSequentialDialogs(actor, original, params, instances, damage, 
 
   const savedRes = actor.attributes.resistances;
   const savedWeak = actor.attributes.weaknesses;
+  const savedImm = actor.attributes.immunities;
 
   try {
     actor.attributes.resistances = [];
     actor.attributes.weaknesses = [];
-    const syntheticDamage = await buildSyntheticDamageRoll(instances, finalValues, effectAdded);
-    return await original.call(actor, { ...params, damage: syntheticDamage, skipIWR: true });
+    actor.attributes.immunities = [];
+    const syntheticDamage = buildSyntheticDamageRoll(damage, instances, finalValues, effectAdded);
+    return await original.call(actor, { ...params, damage: syntheticDamage });
   } finally {
     actor.attributes.resistances = savedRes;
     actor.attributes.weaknesses = savedWeak;
+    actor.attributes.immunities = savedImm;
   }
 }
 
-async function buildSyntheticDamageRoll(instances, finalValues, effectBonus) {
-  const parts = [];
-  for (let i = 0; i < instances.length; i++) {
-    const v = Math.max(0, Math.floor(finalValues[i]));
-    if (v <= 0) continue;
-    parts.push(`${v}[${instances[i].type}]`);
-  }
-  if (effectBonus > 0) {
-    parts.push(`${Math.floor(effectBonus)}[untyped]`);
-  }
-
-  const formula = parts.length ? parts.join(" + ") : "0";
-
-  const DamageRollClass = CONFIG.Dice.rolls.find((r) => r.name === "DamageRoll") ?? Roll;
-  let roll;
+function buildSyntheticDamageRoll(originalDamage, instances, finalValues, effectBonus) {
+  let clone;
   try {
-    roll = new DamageRollClass(formula, {}, {});
-    await roll.evaluate();
+    clone = Object.create(Object.getPrototypeOf(originalDamage));
+    Object.assign(clone, originalDamage);
   } catch (e) {
-    console.error(`[${MODULE_ID}] synthetic roll build failed`, e);
-    roll = new Roll(formula);
-    await roll.evaluate();
+    console.error(`[${MODULE_ID}] roll clone failed`, e);
+    return originalDamage;
   }
-  return roll;
-}
 
-// ============== Step dialog ==============
+  const origInstances = originalDamage.instances ?? [];
+  const newInstances = origInstances.map((inst) => {
+    const c = Object.create(Object.getPrototypeOf(inst));
+    Object.assign(c, inst);
+    return c;
+  });
+
+  for (let i = 0; i < instances.length; i++) {
+    const origInst = instances[i];
+    const origIdx = origInstances.indexOf(origInst);
+    if (origIdx === -1) continue;
+    const newInst = newInstances[origIdx];
+    const v = Math.max(0, Math.floor(finalValues[i]));
+    try {
+      Object.defineProperty(newInst, "_total", { value: v, writable: true, configurable: true });
+    } catch (e) {
+      try { newInst._total = v; } catch (e2) {}
+    }
+  }
+
+  if (effectBonus > 0) {
+    try {
+      const SampleInst = origInstances[0];
+      if (SampleInst) {
+        const bonus = Object.create(Object.getPrototypeOf(SampleInst));
+        Object.assign(bonus, SampleInst);
+        bonus.type = "untyped";
+        bonus.persistent = false;
+        Object.defineProperty(bonus, "_total", {
+          value: Math.floor(effectBonus), writable: true, configurable: true,
+        });
+        newInstances.push(bonus);
+      }
+    } catch (e) {
+      console.error(`[${MODULE_ID}] failed to add effectBonus instance`, e);
+    }
+  }
+
+  try {
+    Object.defineProperty(clone, "instances", {
+      value: newInstances, writable: true, configurable: true,
+    });
+  } catch (e) {
+    try { clone.instances = newInstances; } catch (e2) {}
+  }
+
+  // Итоговый _total — только non-persistent инстансы (persistent идёт как эффект, не HP-урон).
+  let hpTotal = 0;
+  for (const inst of newInstances) {
+    if (inst.persistent) continue;
+    const v = Number(inst._total);
+    hpTotal += Number.isFinite(v) ? v : (Number(inst.total) || 0);
+  }
+
+  try {
+    Object.defineProperty(clone, "_total", {
+      value: hpTotal, writable: true, configurable: true,
+    });
+  } catch (e) {
+    try { clone._total = hpTotal; } catch (e2) {}
+  }
+
+  let debug = false;
+  try { debug = game.settings.get(MODULE_ID, "debugIWRType"); } catch (e) {}
+  if (debug) {
+    console.log(`[${MODULE_ID}] synthetic roll: hpTotal = ${hpTotal}`);
+    console.log(`[${MODULE_ID}] instances:`, newInstances.map(i => ({
+      type: i.type, total: i._total ?? i.total, persistent: i.persistent,
+    })));
+  }
+
+  return clone;
+}
 
 async function showStepDialog({ actor, res, simState, candidates, step, totalSteps, targetName, currentValue, currentTotal }) {
   const resValue = Number(res.value) || 0;
   const resLabel = iwrTypeLabel(res.type, res);
   const SEP = '<span class="pf2e-ar-sep">·</span>';
 
-  const originalTotal = simState.reduce((s, x) => s + x.original, 0);
+  const originalTotal = simState.reduce((s, x) => s + x.originalRaw, 0);
 
   const originalLine = simState.map(s => {
     const c = s.color;
     const labelSpan = `<span style="color:${c};">${s.label}</span>`;
+    if (s.immuned) {
+      return `<span class="pf2e-ar-dmg-immune">${s.originalRaw}</span>` +
+             `&nbsp;<span style="opacity:.6;">${s.label}</span>`;
+    }
     if (s.weakness > 0) {
       const after = s.original + s.weakness;
       const tooltipParts = s.weaknessLabels.map(w =>
@@ -743,8 +827,7 @@ async function showStepDialog({ actor, res, simState, candidates, step, totalSte
     const label = iwrTypeLabel(r.type, r);
     const activeClass = isCurrent ? " pf2e-ar-chip-is-active" : "";
     const icon = r.type === "all-damage"
-      ? `<span class="pf2e-ar-chip-all-icon">🛡</span>`
-      : "";
+      ? `<span class="pf2e-ar-chip-all-icon">🛡</span>` : "";
     return `<span class="pf2e-ar-chip${activeClass}" style="color:${c}; border-color:${c};">
       ${icon}${label} ${r.value}
     </span>`;
@@ -758,6 +841,9 @@ async function showStepDialog({ actor, res, simState, candidates, step, totalSte
   const currentLine = simState.map(s => {
     const c = s.color;
     const v = currentValue(s);
+    if (s.immuned) {
+      return `<span class="pf2e-ar-dmg-immune">${v}</span> <span style="opacity:.6;">${s.label}</span>`;
+    }
     return `<span style="color:${c}; font-weight:600;">${v}</span> <span style="color:${c};">${s.label}</span>`;
   }).join(SEP);
   const curTotal = currentTotal();
@@ -768,8 +854,7 @@ async function showStepDialog({ actor, res, simState, candidates, step, totalSte
     const s = simState[idx];
     const cur = currentValue(s);
     const existing = s.assignedResistances.length > 0
-      ? Math.max(...s.assignedResistances.map(a => a.value))
-      : 0;
+      ? Math.max(...s.assignedResistances.map(a => a.value)) : 0;
     const newMax = Math.max(existing, resValue);
     const newVal = Math.max(0, s.original + s.weakness - newMax);
     const delta = cur - newVal;
@@ -808,8 +893,7 @@ async function showStepDialog({ actor, res, simState, candidates, step, totalSte
 
   const appliedColor = resistanceChipColor(res);
   const appliedIcon = res.type === "all-damage"
-    ? `<span class="pf2e-ar-chip-all-icon">🛡</span>`
-    : "";
+    ? `<span class="pf2e-ar-chip-all-icon">🛡</span>` : "";
   const appliedChip = `<span class="pf2e-ar-chip pf2e-ar-chip-is-active" style="color:${appliedColor}; border-color:${appliedColor}; font-size:21px; padding:3px 14px;">
     ${appliedIcon}${resLabel} ${resValue}
   </span>`;
@@ -841,13 +925,9 @@ async function showStepDialog({ actor, res, simState, candidates, step, totalSte
   `;
 
   let okLabel;
-  if (totalSteps <= 1) {
-    okLabel = t("dialog.apply");
-  } else if (step >= totalSteps) {
-    okLabel = t("dialog.applyLast", { n: step, total: totalSteps });
-  } else {
-    okLabel = t("dialog.applyNext", { n: step, total: totalSteps });
-  }
+  if (totalSteps <= 1) okLabel = t("dialog.apply");
+  else if (step >= totalSteps) okLabel = t("dialog.applyLast", { n: step, total: totalSteps });
+  else okLabel = t("dialog.applyNext", { n: step, total: totalSteps });
 
   return foundry.applications.api.DialogV2.prompt({
     window: { title: t("dialog.title") },
@@ -863,8 +943,6 @@ async function showStepDialog({ actor, res, simState, candidates, step, totalSte
     rejectClose: false,
   });
 }
-
-// ============== IWR wrapper ==============
 
 function wrapIWR(actor) {
   const weaknesses = actor.attributes?.weaknesses ?? [];
@@ -915,9 +993,7 @@ function shouldFixIWR() {
 function isAllResEnabled() {
   try { return game.settings.get(MODULE_ID, "allResEnabled"); } catch (e) { return true; }
 }
-async function plainCall(actor, original, params) {
-  return original.call(actor, params);
-}
+async function plainCall(actor, original, params) { return original.call(actor, params); }
 async function callOriginalWithIWRFix(actor, original, params) {
   if (!shouldFixIWR()) return original.call(actor, params);
   const instances = getDamageInstances(params?.damage);
@@ -926,8 +1002,6 @@ async function callOriginalWithIWRFix(actor, original, params) {
   try { return await original.call(actor, params); }
   finally { unwrap(); }
 }
-
-// ============== Hooks ==============
 
 Hooks.once("init", () => {
   try { injectStyles(); } catch (e) { console.error(`[${MODULE_ID}] injectStyles at init failed`, e); }
@@ -944,7 +1018,7 @@ Hooks.once("init", () => {
     game.settings.register(MODULE_ID, "autoApplyBest", {
       name: `${MODULE_ID}.settings.autoApplyBest.name`,
       hint: `${MODULE_ID}.settings.autoApplyBest.hint`,
-      scope: "client", config: true, type: Boolean, default: false,
+      scope: "client", config: true, type: Boolean, default: true,
     });
   } catch (e) { console.error(`[${MODULE_ID}] register autoApplyBest failed`, e); }
 
@@ -1020,9 +1094,13 @@ Hooks.once("ready", () => {
 
         this[IN_PROGRESS] = true;
         try {
-          return await runSequentialDialogs(
+          const result = await runSequentialDialogs(
             this, originalApplyDamage, params, instances, damage, rollOptions
           );
+          if (result === null) {
+            return callOriginalWithIWRFix(this, originalApplyDamage, params);
+          }
+          return result;
         } finally {
           this[IN_PROGRESS] = false;
         }

@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.2
+
+**Fixed**
+- Persistent damage is now applied correctly.
+
 ## v1.1.1
 
 **Fixed**
