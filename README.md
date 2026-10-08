@@ -45,7 +45,7 @@ pf2e-all-resistance-errata/
 
 ## Settings
 
-Found in **Game Settings → Configure Settings → Module Settings → PF2e All Damage Resistance (Errata)**.
+Found in **Settings → Game Settings → PF2e All Damage Resistance (Errata)**.
 
 | Setting | Default | Description |
 |---|---|---|
