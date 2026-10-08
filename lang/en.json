@@ -1,48 +1,48 @@
 {
   "pf2e-all-resistance-errata": {
     "settings": {
+      "allResEnabled": {
+        "name": "Apply Resistance to All Damage rule (errata)",
+        "hint": "If enabled, the module shows a damage-type selection dialog for targets with Resistance to All Damage. If disabled, the module only fixes weakness/resistance (once-per-effect), leaving all-res rules untouched."
+      },
       "autoApplyBest": {
         "name": "Automatically select best resistance",
         "hint": "Don't show the selection dialog. The module will apply the resistance to the damage type that results in the lowest total damage."
       },
       "showChatMessage": {
-        "name": "Show application result in chat",
-        "hint": "Post a chat message indicating which damage type received the resistance and what the final damage is."
+        "name": "Show IWR breakdown in chat",
+        "hint": "Add an info icon with the applied resistances and weaknesses to the PF2e damage message."
       },
-      "chatPrivacy": {
-        "name": "Message privacy",
-        "hint": "Who can see the module's chat messages. 'By target': if a player character is attacked — everyone, if an NPC/monster — GM only.",
-        "choices": {
-          "auto": "By target (player — public, NPC — GM only)",
-          "public": "Always public",
-          "gm": "Always GM only"
-        }
+      "errataIWR": {
+        "name": "Apply weakness/resistance once per effect (errata)",
+        "hint": "If a target has a weakness or resistance with a condition (e.g. to area damage or to spells), it will trigger once per effect, not once per damage type. Matches Spring 2026 errata."
+      },
+      "debugIWRType": {
+        "name": "Debug: show applied damage type",
+        "hint": "In the chat tooltip, append the damage type each resistance or weakness was applied to. Debug only."
       }
     },
     "dialog": {
       "title": "Resistance to All Damage",
       "damageReceived": "Damage taken: {list}",
       "resistancesLabel": "Resistances:",
-      "damageAfterResistances": "Damage after resistances:",
       "chooseResistance": "Choose resistance:",
       "total": "Total: {value}",
       "finalDamage": "Final damage:",
-      "chipAll": "{value} all",
       "apply": "Apply",
+      "applyingResistance": "Applying:",
+      "step": "Resistance {n} of {total}",
+      "currentDamage": "Current damage:",
+      "applyNext": "Apply {n}/{total} ⏩",
+      "applyLast": "Apply {n}/{total}",
       "warningNotApplicable": "Resistance doesn't apply to this damage type (exception)",
       "warningAlreadyHave": "Already has «{label} {value}» resistance — this choice won't change the outcome",
-      "warningCapped": "Resistance capped at {applied} (only {total} of this damage type)"
-    },
-    "chat": {
-      "title": "🛡 Resistance {value} to all damage",
-      "autoSuffix": " (auto)",
-      "appliedTo": "{name}: applied to {type}",
-      "notApplicable": "— doesn't apply (exception)",
-      "damageChanged": "Damage: {before} → {after}",
-      "speakerAlias": "Resistance to All Damage"
+      "warningCapped": "Resistance capped at {applied} (only {total} of this damage type)",
+      "warningNoEffect": "No effect on this damage type",
+      "weaknessTooltip": "{list}",
+      "weaknessTooltipItem": "Weakness: {type} +{value}"
     },
     "notifications": {
-      "active": "PF2e All Resistance: active",
       "notFound": "PF2e All Resistance: Actor.applyDamage not found.",
       "errorDamage": "PF2e All Resistance: error applying damage. Check F12 Console.",
       "errorLoad": "PF2e All Resistance: error loading module. Check F12 Console."

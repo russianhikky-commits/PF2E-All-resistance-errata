@@ -2,36 +2,41 @@ const MODULE_ID = "pf2e-all-resistance-errata";
 const PATCHED = Symbol(`${MODULE_ID}.patched`);
 const IN_PROGRESS = Symbol(`${MODULE_ID}.inProgress`);
 
+const pendingIWR = new Map();
+
 function t(key, data) {
   const fullKey = `${MODULE_ID}.${key}`;
   try {
     if (data) return game.i18n.format(fullKey, data);
     return game.i18n.localize(fullKey);
-  } catch (e) {
-    return fullKey;
-  }
+  } catch (e) { return fullKey; }
 }
 
 const DAMAGE_COLORS = {
-  acid: "#a8d94a",
-  bleed: "#c0392b",
-  bludgeoning: "#656565",
-  cold: "#4db8ff",
-  electricity: "#ffd93b",
-  fire: "#ff6b35",
-  force: "#b070ff",
-  mental: "#d47aff",
-  negative: "#000000",
-  piercing: "#656565",
-  poison: "#6ab04c",
-  positive: "#ffd700",
-  slashing: "#656565",
-  sonic: "#7fc4ff",
-  spirit: "#DAD4FF",
-  vitality: "#FFED8E",
-  void: "#000000",
-  untyped: "#FFCBCB",
+  acid: "#a8d94a", bleed: "#c0392b", bludgeoning: "#656565", cold: "#4db8ff",
+  electricity: "#ffd93b", fire: "#ff6b35", force: "#b070ff", mental: "#d47aff",
+  negative: "#000000", piercing: "#656565", poison: "#6ab04c", positive: "#ffd700",
+  slashing: "#656565", sonic: "#7fc4ff", spirit: "#DAD4FF", vitality: "#FFED8E",
+  void: "#000000", untyped: "#FFCBCB",
 };
+const NEUTRAL_COLOR = "#e8e8e8";
+
+function colorFor(type) { return DAMAGE_COLORS[type] ?? NEUTRAL_COLOR; }
+
+function resistanceChipColor(r) {
+  if (!r) return NEUTRAL_COLOR;
+  if (r.type === "all-damage") return NEUTRAL_COLOR;
+  if (isDamageType(r.type)) return colorFor(r.type);
+  return NEUTRAL_COLOR;
+}
+
+function capitalizeFirst(s) {
+  if (!s || typeof s !== "string") return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+function isDamageType(type) {
+  return type !== "all-damage" && Object.prototype.hasOwnProperty.call(DAMAGE_COLORS, type);
+}
 
 const CSS = `
   .pf2e-ar {
@@ -47,8 +52,11 @@ const CSS = `
     --ar-num-gold: #ffd15c;
     --ar-total-num: #cfcfcf;
     --ar-chip-bg: rgba(0,0,0,0.25);
+    --ar-chip-weakness-bg: rgba(120, 0, 0, 0.22);
+    --ar-chip-weakness-border: #ff4d4d;
     --ar-warning: #ff9d5c;
     --ar-highlight-border: var(--color-border-highlight, #ff6400);
+    --ar-step: #ffd15c;
     font-family: var(--font-primary, sans-serif);
     font-size: 25px;
     line-height: 1.55;
@@ -68,61 +76,109 @@ const CSS = `
     --ar-num-gold: #a86500;
     --ar-total-num: #333;
     --ar-chip-bg: rgba(0,0,0,0.06);
+    --ar-chip-weakness-bg: rgba(180, 0, 0, 0.10);
+    --ar-chip-weakness-border: #c03030;
     --ar-warning: #a04a00;
     --ar-highlight-border: #c05000;
+    --ar-step: #a86500;
   }
   .pf2e-ar * { text-align: center; }
   .pf2e-ar-sep { opacity: 0.4; margin: 0 6px; }
   .pf2e-ar-total { opacity: 0.85; font-size: 20px; }
   .pf2e-ar-total-num { color: var(--ar-total-num); font-weight: 700; font-size: 22px; }
   .pf2e-ar-hero {
-    padding: 16px 18px;
-    border-radius: 6px;
+    padding: 16px 18px; border-radius: 6px;
     background: var(--ar-bg-hero);
     border: 1px solid var(--ar-border);
     margin-bottom: 14px;
   }
-  .pf2e-ar-hero-name {
-    font-size: 28px;
+  .pf2e-ar-step {
+    font-size: 18px;
+    color: var(--ar-step);
     font-weight: 700;
+    margin-bottom: 8px;
+    opacity: 0.95;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .pf2e-ar-hero-name {
+    font-size: 28px; font-weight: 700;
     color: var(--ar-text-strong);
-    line-height: 1.35;
-    margin-bottom: 10px;
+    line-height: 1.35; margin-bottom: 10px;
   }
   .pf2e-ar-hero-dmg { margin-bottom: 8px; }
   .pf2e-ar-hero-res {
-    margin-top: 12px;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
+    margin-top: 10px;
+    display: flex; flex-wrap: wrap;
+    align-items: center; justify-content: center;
     gap: 6px;
   }
   .pf2e-ar-hero-res-label { font-size: 21px; opacity: 0.75; }
   .pf2e-ar-chip {
-    font-size: 21px;
-    padding: 3px 12px;
-    border-radius: 12px;
-    border: 1px solid;
-    background: var(--ar-chip-bg);
-    font-weight: 600;
+    font-size: 21px; padding: 3px 12px; border-radius: 12px;
+    border: 1px solid; background: var(--ar-chip-bg); font-weight: 600;
+    display: inline-flex; align-items: center; gap: 6px;
   }
   .pf2e-ar-chip-all {
-    font-size: 21px;
-    padding: 3px 14px;
-    border-radius: 12px;
-    border: 1px solid #FF1818;
-    background: rgba(255, 24, 24, 0.14);
-    color: #FF1818;
+    font-size: 21px; padding: 3px 14px; border-radius: 12px;
+    border: 1px solid; background: var(--ar-chip-bg);
     font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
+    display: inline-flex; align-items: center; gap: 6px;
   }
-  .pf2e-ar-chip-all-icon { font-size: 18px; line-height: 1; }
+  .pf2e-ar-chip-all-active {
+    font-size: 21px; padding: 3px 14px; border-radius: 12px;
+    border: 1px solid #FF1818; background: rgba(255, 24, 24, 0.14);
+    color: #FF1818; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 6px;
+    box-shadow: 0 0 0 3px rgba(255, 24, 24, 0.55);
+  }
+  .pf2e-ar-chip-weakness-all {
+    font-size: 21px; padding: 3px 14px; border-radius: 12px;
+    border: 1px solid #FF1818; background: rgba(255, 24, 24, 0.14);
+    color: #FF1818; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .pf2e-ar-chip-all-icon,
+  .pf2e-ar-chip-weakness-all-icon { font-size: 18px; line-height: 1; }
+  .pf2e-ar-chip-weakness {
+    font-size: 21px; padding: 3px 12px; border-radius: 12px;
+    border: 1px solid var(--ar-chip-weakness-border);
+    background: var(--ar-chip-weakness-bg);
+    font-weight: 600;
+  }
+  .pf2e-ar-chip-is-active {
+    box-shadow: 0 0 0 3px rgba(255, 24, 24, 0.55);
+    border-color: #FF1818 !important;
+    color: #FF1818 !important;
+    background: rgba(255, 24, 24, 0.14) !important;
+  }
+  .pf2e-ar-dmg-before {
+    opacity: 0.45;
+    font-weight: 500;
+  }
+  .pf2e-ar-dmg-arrow {
+    opacity: 0.35;
+    margin: 0 6px;
+    font-weight: 400;
+    font-size: 0.9em;
+  }
+  .pf2e-ar-dmg-after {
+    font-weight: 700;
+    cursor: help;
+    text-decoration: underline dotted;
+    text-underline-offset: 4px;
+  }
+  .pf2e-ar-applied {
+    padding: 14px 16px; border-radius: 5px;
+    background: rgba(255, 255, 255, 0.04);
+    margin-bottom: 16px;
+    border-left: 3px solid var(--ar-border);
+    display: flex; align-items: center; justify-content: center;
+    gap: 10px; flex-wrap: wrap;
+  }
+  .pf2e-ar-applied-label { font-size: 19px; opacity: 0.8; }
   .pf2e-ar-baseline {
-    padding: 14px 16px;
-    border-radius: 5px;
+    padding: 14px 16px; border-radius: 5px;
     background: var(--ar-bg-baseline);
     margin-bottom: 16px;
     border-left: 3px solid var(--ar-border);
@@ -131,8 +187,7 @@ const CSS = `
   .pf2e-ar-prompt { font-size: 25px; opacity: 0.95; margin-bottom: 12px; }
   .pf2e-ar-options { display: flex; flex-direction: column; gap: 8px; }
   .pf2e-ar-option {
-    padding: 14px 16px;
-    border-radius: 6px;
+    padding: 14px 16px; border-radius: 6px;
     background: var(--ar-bg-option);
     border: 1px solid var(--ar-border-soft);
     cursor: pointer;
@@ -143,58 +198,24 @@ const CSS = `
     border-color: var(--ar-highlight-border);
     background: var(--ar-bg-option-selected);
   }
-  .pf2e-ar-option-wasted { opacity: 0.85; }
   .pf2e-ar-option-main {
-    display: flex;
-    align-items: baseline;
-    gap: 14px;
-    flex-wrap: wrap;
-    justify-content: center;
+    display: flex; align-items: baseline; gap: 14px;
+    flex-wrap: wrap; justify-content: center;
   }
   .pf2e-ar-option-main input[type="radio"] { display: none; }
   .pf2e-ar-option-name { font-size: 26px; font-weight: 700; }
   .pf2e-ar-option-final-label { font-size: 25px; opacity: 0.9; }
   .pf2e-ar-final-num {
-    font-size: 29px;
-    font-weight: 700;
+    font-size: 29px; font-weight: 700;
     color: var(--ar-num-gold);
     margin-left: -8px;
     font-variant-numeric: tabular-nums;
   }
   .pf2e-ar-warning {
-    margin-top: 4px;
-    font-size: 15px;
-    font-style: italic;
-    opacity: 0.85;
-    color: var(--ar-warning);
-    line-height: 1.35;
+    margin-top: 4px; font-size: 15px;
+    font-style: italic; opacity: 0.85;
+    color: var(--ar-warning); line-height: 1.35;
   }
-  .pf2e-ar-chat {
-    --ar-text: var(--color-text-primary, #e8e8e8);
-    --ar-num-gold: #ffd15c;
-    --ar-chip-bg: rgba(0,0,0,0.25);
-    font-family: var(--font-primary, sans-serif);
-    font-size: 14px;
-    line-height: 1.5;
-    padding: 8px 10px;
-    border-radius: 5px;
-    background: var(--ar-chip-bg);
-    border-left: 3px solid #FF1818;
-    color: var(--ar-text);
-  }
-  body.theme-light .pf2e-ar-chat {
-    --ar-text: var(--color-text-primary, #191813);
-    --ar-num-gold: #a86500;
-    --ar-chip-bg: rgba(0,0,0,0.05);
-  }
-  .pf2e-ar-chat-title {
-    font-weight: 700;
-    color: #FF1818;
-    margin-bottom: 6px;
-    font-size: 14px;
-  }
-  .pf2e-ar-chat-row { margin-bottom: 3px; }
-  .pf2e-ar-chat-num { color: var(--ar-num-gold); font-weight: 700; }
 `;
 
 function injectStyles() {
@@ -212,10 +233,6 @@ function injectStyles() {
   }
 }
 
-function log(...args) {
-  console.log(`[${MODULE_ID}]`, ...args);
-}
-
 function getDamageInstances(damage) {
   return damage?.instances?.filter((i) =>
     i && typeof i.type === "string" && Number.isFinite(i.total) && !i.persistent
@@ -226,330 +243,620 @@ function damageTypeLabel(type) {
   const key = CONFIG.PF2E?.damageTypes?.[type];
   if (!key) return type;
   try {
-    const localized = game.i18n.localize(key);
-    return localized === key ? type : localized;
-  } catch (e) {
-    return type;
+    const l = game.i18n.localize(key);
+    return l === key ? type : l;
+  } catch (e) { return type; }
+}
+
+function iwrTypeLabel(type, element) {
+  if (!type) return "";
+  const labels = element?.typeLabels;
+  if (labels && typeof labels === "object" && labels[type]) {
+    try {
+      const l = game.i18n.localize(labels[type]);
+      if (l && l !== labels[type]) return capitalizeFirst(l);
+    } catch (e) {}
   }
+  const dm = damageTypeLabel(type);
+  if (dm !== type) return capitalizeFirst(dm);
+  return capitalizeFirst(type);
 }
 
-function getExceptions(resistance) {
-  const list = resistance?.exceptions;
-  if (!Array.isArray(list)) return [];
-  return list.map((x) => (typeof x === "string" ? x : x?.type ?? ""));
-}
-
-function resistanceAppliesTo(resistance, instance) {
-  if (!resistance) return false;
-  if (resistance.ignored) return false;
-  const type = instance?.type;
-  if (!type) return false;
-  const rType = resistance.type;
-  if (rType !== "all-damage" && rType !== type) return false;
-  const exceptions = getExceptions(resistance);
-  if (exceptions.includes(type)) return false;
-  return true;
+function iwrTypeLabelLower(type, element) {
+  const s = iwrTypeLabel(type, element);
+  return s ? s.toLowerCase() : s;
 }
 
 function buildInstanceOptions(instance, damage, rollOptions) {
   const opts = new Set();
-
   const addAll = (arr) => {
     if (!arr) return;
-    const iterable = arr instanceof Set ? arr : Array.isArray(arr) ? arr : null;
-    if (!iterable) return;
-    for (const o of iterable) {
-      if (typeof o === "string") opts.add(o);
-    }
+    if (arr instanceof Set) { for (const o of arr) if (typeof o === "string") opts.add(o); return; }
+    if (Array.isArray(arr)) { for (const o of arr) if (typeof o === "string") opts.add(o); }
   };
-
   addAll(damage?.options);
   addAll(damage?._options);
   addAll(rollOptions);
   addAll(instance?.options);
   addAll(instance?.formalDescription);
-
-  if (instance?.type) {
-    opts.add(`damage:type:${instance.type}`);
-  }
-
-  const magicalTraits = new Set(["magical", "arcane", "divine", "occult", "primal"]);
-
+  addAll(damage?.context?.options);
+  addAll(damage?.roll?.options);
+  if (instance?.type) opts.add(`damage:type:${instance.type}`);
+  const addTraits = (traits) => {
+    if (!Array.isArray(traits)) return;
+    for (const tr of traits) {
+      if (typeof tr !== "string") continue;
+      opts.add(`item:trait:${tr}`);
+      opts.add(`item:${tr}`);
+      if (["magical", "arcane", "divine", "occult", "primal"].includes(tr)) {
+        opts.add("item:magical");
+      }
+    }
+  };
+  addTraits(instance?.traits);
+  addTraits(instance?.item?.traits);
+  addTraits(instance?.item?.system?.traits?.value);
   if (instance?.magical === true) opts.add("item:magical");
-
-  if (Array.isArray(instance?.traits)) {
-    for (const tr of instance.traits) {
-      if (magicalTraits.has(tr)) {
-        opts.add("item:magical");
-        break;
-      }
-    }
-  }
-  if (Array.isArray(instance?.item?.traits)) {
-    for (const tr of instance.item.traits) {
-      if (magicalTraits.has(tr)) {
-        opts.add("item:magical");
-        break;
-      }
-    }
-  }
-  if (Array.isArray(instance?.item?.system?.traits?.value)) {
-    for (const tr of instance.item.system.traits.value) {
-      if (magicalTraits.has(tr)) {
-        opts.add("item:magical");
-        break;
-      }
-    }
-  }
-
   for (const o of opts) {
     if (typeof o === "string" && o.toLowerCase().includes("magical")) {
       opts.add("item:magical");
       break;
     }
   }
-
   return opts;
+}
+
+function iwrMatchesType(iwr, instanceType) {
+  if (!iwr) return false;
+  const t = iwr.type;
+  if (!t) return false;
+  if (t === "all-damage") return true;
+  if (t === instanceType) return true;
+  if (!isDamageType(t)) return true;
+  return false;
+}
+
+function resistanceAppliesTo(resistance, instance, damage, rollOptions) {
+  if (!resistance || resistance.ignored) return false;
+  const type = instance?.type;
+  if (!type) return false;
+  if (!iwrMatchesType(resistance, type)) return false;
+  if (typeof resistance.test === "function") {
+    try { return !!resistance.test(buildInstanceOptions(instance, damage, rollOptions)); }
+    catch (e) {}
+  }
+  return resistance.type === "all-damage" || resistance.type === type;
 }
 
 function resistanceValueFor(resistance, instance, damage, rollOptions) {
   if (!resistance) return 0;
   let value = Number(resistance.value) || 0;
-  if (typeof resistance.getDoubledValue === "function") {
+  const hasDoubleVs = Array.isArray(resistance.doubleVs) && resistance.doubleVs.length > 0;
+  if (hasDoubleVs && typeof resistance.getDoubledValue === "function") {
     try {
-      const opts = buildInstanceOptions(instance, damage, rollOptions);
-      const doubled = resistance.getDoubledValue(opts);
-      if (Number.isFinite(doubled) && doubled > 0) value = doubled;
-    } catch (e) {
-      // ignore
-    }
+      const d = resistance.getDoubledValue(buildInstanceOptions(instance, damage, rollOptions));
+      if (Number.isFinite(d) && d > 0) value = d;
+    } catch (e) {}
   }
   return value;
 }
 
-function getSpecificResistanceForInstance(actor, instance, excludeAllResistance, damage, rollOptions) {
-  let best = 0;
-  for (const r of (actor.attributes?.resistances ?? [])) {
-    if (r === excludeAllResistance) continue;
-    if (r.ignored) continue;
-    if (!resistanceAppliesTo(r, instance)) continue;
-    const value = resistanceValueFor(r, instance, damage, rollOptions);
-    if (value > best) best = value;
+function weaknessAppliesToInstance(weakness, instance, damage, rollOptions) {
+  if (!weakness || weakness.ignored) return false;
+  const type = instance?.type;
+  if (!type) return false;
+  if (!iwrMatchesType(weakness, type)) return false;
+  if (typeof weakness.test === "function") {
+    try { return !!weakness.test(buildInstanceOptions(instance, damage, rollOptions)); }
+    catch (e) {}
   }
-  return best;
+  return weakness.type === "all-damage" || weakness.type === type;
 }
 
-function computeOutcome(actor, instances, chosenType, allResistance, allValue, damage, rollOptions) {
-  const parts = [];
-  let baseTotal = 0;
-  let totalReduction = 0;
-  let finalTotal = 0;
-
+function weaknessAppliesToEffect(weakness, instances, damage, rollOptions) {
+  if (!weakness || weakness.ignored) return false;
+  if (typeof weakness.test !== "function") return false;
   for (const inst of instances) {
-    const specific = getSpecificResistanceForInstance(actor, inst, allResistance, damage, rollOptions);
-    let effective = specific;
+    try {
+      if (weakness.test(buildInstanceOptions(inst, damage, rollOptions))) return true;
+    } catch (e) {}
+  }
+  return false;
+}
 
-    if (chosenType && inst.type === chosenType && allResistance) {
-      if (resistanceAppliesTo(allResistance, inst)) {
-        const v = resistanceValueFor(allResistance, inst, damage, rollOptions);
-        effective = Math.max(effective, v);
-      }
+function isEffectScopedIWR(element) {
+  const type = element?.type;
+  if (!type) return false;
+  if (type === "all-damage") return false;
+  if (isDamageType(type)) return false;
+  return true;
+}
+
+function computeAppliedWeaknesses(actor, instances, damage, rollOptions) {
+  const weaknesses = (actor.attributes?.weaknesses ?? []).filter(
+    (w) => !w.ignored && (Number(w.value) || 0) > 0
+  );
+  const used = new Set();
+  const instanceApps = [];
+  const effectApps = [];
+
+  for (const w of weaknesses) {
+    if (!isEffectScopedIWR(w)) continue;
+    if (weaknessAppliesToEffect(w, instances, damage, rollOptions)) {
+      const value = Number(w.value) || 0;
+      effectApps.push({ weakness: w, value });
+      used.add(w);
     }
+  }
 
-    const applied = Math.min(effective, inst.total);
-    const net = Math.max(0, inst.total - applied);
+  for (let i = 0; i < instances.length; i++) {
+    const inst = instances[i];
+    const candidates = weaknesses.filter((w) => {
+      if (used.has(w)) return false;
+      if (isEffectScopedIWR(w)) return false;
+      if (!weaknessAppliesToInstance(w, inst, damage, rollOptions)) return false;
+      return true;
+    });
+    if (!candidates.length) continue;
+    candidates.sort((a, b) => {
+      const aAll = a.type === "all-damage" ? 1 : 0;
+      const bAll = b.type === "all-damage" ? 1 : 0;
+      if (aAll !== bAll) return aAll - bAll;
+      return (Number(b.value) || 0) - (Number(a.value) || 0);
+    });
+    const winner = candidates[0];
+    instanceApps.push({ weakness: winner, instanceIndex: i, value: Number(winner.value) || 0 });
+    used.add(winner);
+  }
 
-    baseTotal += inst.total;
-    totalReduction += applied;
-    finalTotal += net;
+  const effectBonus = effectApps.reduce((s, x) => s + x.value, 0);
+  return { instanceApps, effectApps, effectBonus };
+}
 
-    parts.push({
-      type: inst.type,
-      label: damageTypeLabel(inst.type),
-      color: DAMAGE_COLORS[inst.type] ?? "#dddddd",
-      total: inst.total,
-      specific,
-      effective,
-      applied,
-      net,
+// ============== IWR injection into PF2e chat message ==============
+
+function compareResistanceSpecificity(a, b) {
+  if (a.value !== b.value) return a.value - b.value;
+  const scoreOf = (r) => {
+    if (r.type === "all-damage") return 0;
+    if (isDamageType(r.type)) return 2;
+    return 1;
+  };
+  return scoreOf(a.resistance) - scoreOf(b.resistance);
+}
+
+function shouldShowDebugType() {
+  try { return game.settings.get(MODULE_ID, "debugIWRType"); } catch (e) { return false; }
+}
+
+function buildIWRApplications(simState, weaknessInstApps, effectApps) {
+  const apps = [];
+  const debug = shouldShowDebugType();
+
+  // Effect-scoped weaknesses: no specific target instance, so no debug suffix.
+  for (const ea of effectApps) {
+    apps.push({
+      category: "weakness",
+      type: iwrTypeLabelLower(ea.weakness.type, ea.weakness),
+      adjustment: ea.value,
     });
   }
 
-  return { baseTotal, totalReduction, finalTotal, parts };
+  // Per-instance weaknesses: have a target instance.
+  for (const ia of weaknessInstApps) {
+    let typeStr = iwrTypeLabelLower(ia.weakness.type, ia.weakness);
+    if (debug) {
+      const s = simState[ia.instanceIndex];
+      if (s) typeStr = `${typeStr} → ${s.label.toLowerCase()}`;
+    }
+    apps.push({
+      category: "weakness",
+      type: typeStr,
+      adjustment: ia.value,
+    });
+  }
+
+  // Resistances: pick winner per instance and, if debug, append target type.
+  for (const s of simState) {
+    if (!s.assignedResistances || s.assignedResistances.length === 0) continue;
+    let best = s.assignedResistances[0];
+    for (const a of s.assignedResistances) {
+      if (compareResistanceSpecificity(a, best) > 0) best = a;
+    }
+    let typeStr = iwrTypeLabelLower(best.resistance.type, best.resistance);
+    if (debug) {
+      typeStr = `${typeStr} → ${s.label.toLowerCase()}`;
+    }
+    apps.push({
+      category: "resistance",
+      type: typeStr,
+      adjustment: -best.value,
+    });
+  }
+
+  return apps;
 }
 
-function computeChoices(actor, instances, resistance, resistanceValue, damage, rollOptions) {
-  const baseline = computeOutcome(actor, instances, null, resistance, resistanceValue, damage, rollOptions);
+function injectIWRSpan(content, applications) {
+  if (!applications || applications.length === 0) return content;
+  if (typeof content !== "string" || !content) return content;
 
-  const choices = instances.map((instance, index) => {
-    const outcome = computeOutcome(
-      actor,
-      instances,
-      instance.type,
-      resistance,
-      resistanceValue,
-      damage,
-      rollOptions
-    );
+  const cleaned = content.replace(
+    /<span class="iwr"[^>]*>[\s\S]*?<\/span>\s*/g,
+    ""
+  );
 
-    const specific = getSpecificResistanceForInstance(actor, instance, resistance, damage, rollOptions);
-    const ownPart = outcome.parts.find((p) => p.type === instance.type);
-    const allApplies = resistanceAppliesTo(resistance, instance);
-    const effectiveAll = resistanceValueFor(resistance, instance, damage, rollOptions);
+  const json = JSON.stringify(applications).replace(/"/g, "&quot;");
+  const iwrSpan = `<span class="iwr" data-visibility="all" data-applications="${json}"><i class="fa-solid fa-circle-info small"></i></span>`;
 
-    const isNotApplicable = !allApplies;
-    const isWasted = isNotApplicable || specific >= effectiveAll;
-    const isCapped =
-      allApplies && ownPart && ownPart.applied < effectiveAll && !isWasted;
+  const re = /(<span class="statements">[\s\S]*?<\/span>)\s*(<button)/;
+  if (re.test(cleaned)) {
+    return cleaned.replace(re, `$1\n        ${iwrSpan}\n        $2`);
+  }
+  return cleaned.replace(/(<\/section>)/, `    ${iwrSpan}\n$1`);
+}
 
-    return {
-      index,
-      type: instance.type,
-      label: damageTypeLabel(instance.type),
-      color: DAMAGE_COLORS[instance.type] ?? "#dddddd",
-      outcome,
-      specific,
-      effectiveAll,
-      allApplies,
-      ownPart,
-      isWasted,
-      isNotApplicable,
-      isCapped,
-    };
+Hooks.on("preCreateChatMessage", (message) => {
+  try {
+    const flags = message.flags?.pf2e;
+    if (flags?.context?.type !== "damage-taken") return;
+    const uuid = flags.appliedDamage?.uuid;
+    if (!uuid || !pendingIWR.has(uuid)) return;
+
+    const data = pendingIWR.get(uuid);
+    pendingIWR.delete(uuid);
+
+    let show = true;
+    try { show = game.settings.get(MODULE_ID, "showChatMessage"); } catch (e) {}
+    if (!show) return;
+
+    if (!data.applications || data.applications.length === 0) return;
+
+    const newContent = injectIWRSpan(message.content, data.applications);
+    if (newContent && newContent !== message.content) {
+      message.updateSource({ content: newContent });
+    }
+  } catch (e) {
+    console.error(`[${MODULE_ID}] preCreateChatMessage injection failed`, e);
+  }
+});
+
+// ============== Main pipeline ==============
+
+async function runSequentialDialogs(actor, original, params, instances, damage, rollOptions) {
+  const targetName = params.token?.name ?? actor.name;
+
+  const { instanceApps: weaknessInstApps, effectApps, effectBonus } = computeAppliedWeaknesses(
+    actor, instances, damage, rollOptions
+  );
+  const weaknessByInstance = new Map();
+  const weaknessLabelsByInstance = new Map();
+  for (const wa of weaknessInstApps) {
+    weaknessByInstance.set(wa.instanceIndex,
+      (weaknessByInstance.get(wa.instanceIndex) ?? 0) + wa.value);
+    const lbl = iwrTypeLabel(wa.weakness.type, wa.weakness);
+    const arr = weaknessLabelsByInstance.get(wa.instanceIndex) ?? [];
+    arr.push({ label: lbl, value: wa.value });
+    weaknessLabelsByInstance.set(wa.instanceIndex, arr);
+  }
+
+  const allRes = (actor.attributes?.resistances ?? []).filter(
+    r => r && !r.ignored && (Number(r.value) || 0) > 0
+  );
+  const applicableRes = allRes.filter(res =>
+    instances.some(inst => resistanceAppliesTo(res, inst, damage, rollOptions))
+  );
+
+  const sortedRes = [...applicableRes].sort((a, b) =>
+    (Number(b.value) || 0) - (Number(a.value) || 0)
+  );
+
+  const plan = sortedRes.map(res => {
+    const candidates = [];
+    for (let i = 0; i < instances.length; i++) {
+      if (resistanceAppliesTo(res, instances[i], damage, rollOptions)) candidates.push(i);
+    }
+    return { res, candidates, needsDialog: candidates.length > 1 };
   });
 
-  const sortedChoices = [...choices].sort(
-    (a, b) => a.outcome.finalTotal - b.outcome.finalTotal
-  );
+  const simState = instances.map((inst, i) => ({
+    index: i,
+    type: inst.type,
+    label: damageTypeLabel(inst.type),
+    color: colorFor(inst.type),
+    original: inst.total,
+    weakness: weaknessByInstance.get(i) ?? 0,
+    weaknessLabels: weaknessLabelsByInstance.get(i) ?? [],
+    assignedResistances: [],
+  }));
 
-  return { baseline, choices, sortedChoices };
+  function currentValue(s) {
+    let maxRed = 0;
+    for (const a of s.assignedResistances) {
+      if (a.value > maxRed) maxRed = a.value;
+    }
+    return Math.max(0, s.original + s.weakness - maxRed);
+  }
+  function currentTotal() {
+    return simState.reduce((sum, s) => sum + currentValue(s), 0);
+  }
+  function assign(res, idx) {
+    simState[idx].assignedResistances.push({
+      resistance: res, value: Number(res.value) || 0,
+    });
+  }
+
+  let autoApply = false;
+  try { autoApply = game.settings.get(MODULE_ID, "autoApplyBest"); } catch (e) {}
+
+  const autoPass = plan.filter(p => !p.needsDialog);
+  const dialogPass = plan.filter(p => p.needsDialog);
+
+  for (const p of autoPass) {
+    const { res, candidates } = p;
+    if (!candidates.length) continue;
+    let chosen;
+    let bestRed = -1;
+    for (const idx of candidates) {
+      const cur = currentValue(simState[idx]);
+      const existing = simState[idx].assignedResistances.length > 0
+        ? Math.max(...simState[idx].assignedResistances.map(a => a.value))
+        : 0;
+      const newMax = Math.max(existing, Number(res.value) || 0);
+      const newVal = Math.max(0, simState[idx].original + simState[idx].weakness - newMax);
+      const reduction = cur - newVal;
+      if (reduction > bestRed) { bestRed = reduction; chosen = idx; }
+    }
+    if (chosen !== undefined) assign(res, chosen);
+  }
+
+  const totalDialogs = dialogPass.length;
+  let step = 0;
+
+  for (const p of dialogPass) {
+    const { res, candidates } = p;
+    if (!candidates.length) continue;
+
+    let chosen;
+    if (autoApply) {
+      let bestRed = -1;
+      for (const idx of candidates) {
+        const cur = currentValue(simState[idx]);
+        const existing = simState[idx].assignedResistances.length > 0
+          ? Math.max(...simState[idx].assignedResistances.map(a => a.value))
+          : 0;
+        const newMax = Math.max(existing, Number(res.value) || 0);
+        const newVal = Math.max(0, simState[idx].original + simState[idx].weakness - newMax);
+        const reduction = cur - newVal;
+        if (reduction > bestRed) { bestRed = reduction; chosen = idx; }
+      }
+    } else {
+      step++;
+      chosen = await showStepDialog({
+        actor, res, simState, candidates, step, totalSteps: totalDialogs,
+        targetName, currentValue, currentTotal,
+      });
+      if (chosen === null || chosen === undefined) {
+        let bestRed = -1;
+        for (const idx of candidates) {
+          const cur = currentValue(simState[idx]);
+          const existing = simState[idx].assignedResistances.length > 0
+            ? Math.max(...simState[idx].assignedResistances.map(a => a.value))
+            : 0;
+          const newMax = Math.max(existing, Number(res.value) || 0);
+          const newVal = Math.max(0, simState[idx].original + simState[idx].weakness - newMax);
+          const reduction = cur - newVal;
+          if (reduction > bestRed) { bestRed = reduction; chosen = idx; }
+        }
+      }
+    }
+    if (chosen !== undefined) assign(res, chosen);
+  }
+
+  const finalValues = simState.map(currentValue);
+  let finalTotal = finalValues.reduce((a, b) => a + b, 0);
+  let effectAdded = 0;
+  if (finalTotal > 0 && effectBonus > 0) {
+    finalTotal += effectBonus;
+    effectAdded = effectBonus;
+  }
+
+  const applications = buildIWRApplications(simState, weaknessInstApps, effectApps);
+  if (applications.length > 0) {
+    pendingIWR.set(actor.uuid, { applications, createdAt: Date.now() });
+  }
+
+  const savedRes = actor.attributes.resistances;
+  const savedWeak = actor.attributes.weaknesses;
+
+  try {
+    actor.attributes.resistances = [];
+    actor.attributes.weaknesses = [];
+    const syntheticDamage = await buildSyntheticDamageRoll(instances, finalValues, effectAdded);
+    return await original.call(actor, { ...params, damage: syntheticDamage, skipIWR: true });
+  } finally {
+    actor.attributes.resistances = savedRes;
+    actor.attributes.weaknesses = savedWeak;
+  }
 }
 
-function pickBestChoice(sortedChoices) {
-  const useful = sortedChoices.filter((c) => !c.isNotApplicable);
-  if (useful.length) return useful[0];
-  return sortedChoices[0] ?? null;
+async function buildSyntheticDamageRoll(instances, finalValues, effectBonus) {
+  const parts = [];
+  for (let i = 0; i < instances.length; i++) {
+    const v = Math.max(0, Math.floor(finalValues[i]));
+    if (v <= 0) continue;
+    parts.push(`${v}[${instances[i].type}]`);
+  }
+  if (effectBonus > 0) {
+    parts.push(`${Math.floor(effectBonus)}[untyped]`);
+  }
+
+  const formula = parts.length ? parts.join(" + ") : "0";
+
+  const DamageRollClass = CONFIG.Dice.rolls.find((r) => r.name === "DamageRoll") ?? Roll;
+  let roll;
+  try {
+    roll = new DamageRollClass(formula, {}, {});
+    await roll.evaluate();
+  } catch (e) {
+    console.error(`[${MODULE_ID}] synthetic roll build failed`, e);
+    roll = new Roll(formula);
+    await roll.evaluate();
+  }
+  return roll;
 }
 
-const SEP = '<span class="pf2e-ar-sep">·</span>';
+// ============== Step dialog ==============
 
-function totalSuffix(n) {
-  return ` <span class="pf2e-ar-total">(${t("dialog.total", { value: `<span class="pf2e-ar-total-num">${n}</span>` })})</span>`;
-}
+async function showStepDialog({ actor, res, simState, candidates, step, totalSteps, targetName, currentValue, currentTotal }) {
+  const resValue = Number(res.value) || 0;
+  const resLabel = iwrTypeLabel(res.type, res);
+  const SEP = '<span class="pf2e-ar-sep">·</span>';
 
-async function chooseResistance(actor, instances, resistance, resistanceValue, targetName, damage, rollOptions) {
-  const { baseline, sortedChoices } = computeChoices(
-    actor,
-    instances,
-    resistance,
-    resistanceValue,
-    damage,
-    rollOptions
+  const originalTotal = simState.reduce((s, x) => s + x.original, 0);
+
+  const originalLine = simState.map(s => {
+    const c = s.color;
+    const labelSpan = `<span style="color:${c};">${s.label}</span>`;
+    if (s.weakness > 0) {
+      const after = s.original + s.weakness;
+      const tooltipParts = s.weaknessLabels.map(w =>
+        t("dialog.weaknessTooltipItem", { type: w.label, value: w.value })
+      ).join(", ");
+      const tooltip = t("dialog.weaknessTooltip", { list: tooltipParts });
+      return `<span class="pf2e-ar-dmg-before">${s.original}</span>` +
+             `<span class="pf2e-ar-dmg-arrow">→</span>` +
+             `<span class="pf2e-ar-dmg-after" style="color:${c};" ` +
+             `data-tooltip="${tooltip}" data-tooltip-direction="UP">${after}</span>` +
+             `&nbsp;${labelSpan}`;
+    }
+    return `<span style="color:${c}; font-weight:600;">${s.original}</span>&nbsp;${labelSpan}`;
+  }).join(SEP) + ` <span class="pf2e-ar-total">(${t("dialog.total", { value: `<span class="pf2e-ar-total-num">${originalTotal}</span>` })})</span>`;
+
+  const allRes = (actor.attributes?.resistances ?? []).filter(
+    r => !r.ignored && (Number(r.value) || 0) > 0
   );
 
-  const otherResistances = (actor.attributes?.resistances ?? []).filter(
-    (r) =>
-      r !== resistance &&
-      !r.ignored &&
-      r.type !== "all-damage" &&
-      (Number(r.value) || 0) > 0
-  );
+  const resChips = allRes.map(r => {
+    const isCurrent = r === res;
+    const c = resistanceChipColor(r);
+    const label = iwrTypeLabel(r.type, r);
+    const activeClass = isCurrent ? " pf2e-ar-chip-is-active" : "";
+    const icon = r.type === "all-damage"
+      ? `<span class="pf2e-ar-chip-all-icon">🛡</span>`
+      : "";
+    return `<span class="pf2e-ar-chip${activeClass}" style="color:${c}; border-color:${c};">
+      ${icon}${label} ${r.value}
+    </span>`;
+  }).join(SEP);
 
-  const originalTotal = instances.reduce((s, i) => s + i.total, 0);
+  const resLine = allRes.length ? `<div class="pf2e-ar-hero-res">
+    <span class="pf2e-ar-hero-res-label">${t("dialog.resistancesLabel")}</span>
+    ${resChips}
+  </div>` : "";
 
-  const originalLine =
-    instances
-      .map((i) => {
-        const c = DAMAGE_COLORS[i.type] ?? "#dddddd";
-        return `<span style="color:${c}; font-weight:600;">${i.total}</span>&nbsp;<span style="color:${c};">${damageTypeLabel(i.type)}</span>`;
-      })
-      .join(SEP) + totalSuffix(originalTotal);
+  const currentLine = simState.map(s => {
+    const c = s.color;
+    const v = currentValue(s);
+    return `<span style="color:${c}; font-weight:600;">${v}</span> <span style="color:${c};">${s.label}</span>`;
+  }).join(SEP);
+  const curTotal = currentTotal();
+  const currentLineWithTotal = currentLine +
+    ` <span class="pf2e-ar-total">(${t("dialog.total", { value: `<span class="pf2e-ar-total-num">${curTotal}</span>` })})</span>`;
 
-  const baselineTotal = baseline.parts.reduce((s, p) => s + p.net, 0);
+  const optionData = candidates.map((idx) => {
+    const s = simState[idx];
+    const cur = currentValue(s);
+    const existing = s.assignedResistances.length > 0
+      ? Math.max(...s.assignedResistances.map(a => a.value))
+      : 0;
+    const newMax = Math.max(existing, resValue);
+    const newVal = Math.max(0, s.original + s.weakness - newMax);
+    const delta = cur - newVal;
+    const totalIfPicked = curTotal - delta;
 
-  const baselineLine =
-    baseline.parts
-      .map((p) => {
-        return `<span style="color:${p.color}; font-weight:600;">${p.net}</span>&nbsp;<span style="color:${p.color};">${p.label}</span>`;
-      })
-      .join(SEP) + totalSuffix(baselineTotal);
+    const warnings = [];
+    if (existing >= resValue && s.assignedResistances.length > 0) {
+      const first = s.assignedResistances[0];
+      const lbl = iwrTypeLabel(first.resistance.type, first.resistance);
+      warnings.push(t("dialog.warningAlreadyHave", { label: lbl, value: existing }));
+    } else if (cur === 0) {
+      warnings.push(t("dialog.warningNoEffect"));
+    } else if (resValue > cur) {
+      warnings.push(t("dialog.warningCapped", { applied: cur, total: cur }));
+    }
 
-  const allChip = `<span class="pf2e-ar-chip-all">
-    <span class="pf2e-ar-chip-all-icon">🛡</span>
-    <span>${t("dialog.chipAll", { value: resistanceValue })}</span>
+    return { idx, s, totalIfPicked, warnings };
+  });
+
+  optionData.sort((a, b) => a.totalIfPicked - b.totalIfPicked);
+
+  const rows = optionData.map(({ idx, s, totalIfPicked, warnings }, i) => {
+    const isSelected = i === 0 ? "checked" : "";
+    return `
+      <label class="pf2e-ar-option">
+        <div class="pf2e-ar-option-main">
+          <input type="radio" name="pf2e-ar-choice" value="${idx}" ${isSelected}>
+          <span class="pf2e-ar-option-name" style="color:${s.color};">${s.label}</span>
+          <span class="pf2e-ar-option-final-label">${t("dialog.finalDamage")}</span>
+          <span class="pf2e-ar-final-num">${totalIfPicked}</span>
+        </div>
+        ${warnings.length ? `<div class="pf2e-ar-warning">⚠ ${warnings.join("<br>⚠ ")}</div>` : ""}
+      </label>
+    `;
+  }).join("");
+
+  const appliedColor = resistanceChipColor(res);
+  const appliedIcon = res.type === "all-damage"
+    ? `<span class="pf2e-ar-chip-all-icon">🛡</span>`
+    : "";
+  const appliedChip = `<span class="pf2e-ar-chip pf2e-ar-chip-is-active" style="color:${appliedColor}; border-color:${appliedColor}; font-size:21px; padding:3px 14px;">
+    ${appliedIcon}${resLabel} ${resValue}
   </span>`;
 
-  const otherChips = otherResistances
-    .map((r) => {
-      const c = DAMAGE_COLORS[r.type] ?? "#dddddd";
-      return `<span class="pf2e-ar-chip" style="color:${c}; border-color:${c};">${damageTypeLabel(r.type)} ${r.value}</span>`;
-    })
-    .join(SEP);
-
-  const resLine = `<div class="pf2e-ar-hero-res">
-    <span class="pf2e-ar-hero-res-label">${t("dialog.resistancesLabel")}</span>
-    ${allChip}
-    ${otherChips ? SEP + otherChips : ""}
-  </div>`;
-
-  const rows = sortedChoices
-    .map((c, i) => {
-      const warnings = [];
-      if (c.isNotApplicable) {
-        warnings.push(t("dialog.warningNotApplicable"));
-      } else if (c.isWasted) {
-        warnings.push(
-          t("dialog.warningAlreadyHave", { label: c.label, value: c.specific })
-        );
-      } else if (c.isCapped) {
-        warnings.push(
-          t("dialog.warningCapped", {
-            applied: c.ownPart.applied,
-            total: c.ownPart.total,
-          })
-        );
-      }
-
-      return `
-        <label class="pf2e-ar-option${c.isWasted ? " pf2e-ar-option-wasted" : ""}">
-          <div class="pf2e-ar-option-main">
-            <input type="radio" name="pf2e-all-resist-choice" value="${c.index}" ${i === 0 ? "checked" : ""}>
-            <span class="pf2e-ar-option-name" style="color:${c.color};">${c.label} ${resistanceValue}</span>
-            <span class="pf2e-ar-option-final-label">${t("dialog.finalDamage")}</span>
-            <span class="pf2e-ar-final-num">${c.outcome.finalTotal}</span>
-          </div>
-          ${warnings.length ? `<div class="pf2e-ar-warning">⚠ ${warnings.join("<br>⚠ ")}</div>` : ""}
-        </label>
-      `;
-    })
-    .join("");
+  const showStep = totalSteps > 1;
+  const stepLine = showStep
+    ? `<div class="pf2e-ar-step">${t("dialog.step", { n: step, total: totalSteps })}</div>`
+    : "";
 
   const content = `
     <div class="pf2e-ar">
       <div class="pf2e-ar-hero">
+        ${stepLine}
         <div class="pf2e-ar-hero-name">${targetName}</div>
         <div class="pf2e-ar-hero-dmg">${t("dialog.damageReceived", { list: originalLine })}</div>
         ${resLine}
       </div>
+      <div class="pf2e-ar-applied">
+        <span class="pf2e-ar-applied-label">${t("dialog.applyingResistance")}</span>
+        ${appliedChip}
+      </div>
       <div class="pf2e-ar-baseline">
-        <div class="pf2e-ar-baseline-label">${t("dialog.damageAfterResistances")}</div>
-        <div>${baselineLine}</div>
+        <div class="pf2e-ar-baseline-label">${t("dialog.currentDamage")}</div>
+        <div>${currentLineWithTotal}</div>
       </div>
       <div class="pf2e-ar-prompt">${t("dialog.chooseResistance")}</div>
       <div class="pf2e-ar-options">${rows}</div>
     </div>
   `;
 
+  let okLabel;
+  if (totalSteps <= 1) {
+    okLabel = t("dialog.apply");
+  } else if (step >= totalSteps) {
+    okLabel = t("dialog.applyLast", { n: step, total: totalSteps });
+  } else {
+    okLabel = t("dialog.applyNext", { n: step, total: totalSteps });
+  }
+
   return foundry.applications.api.DialogV2.prompt({
     window: { title: t("dialog.title") },
     position: { width: 900 },
     content,
     ok: {
-      label: t("dialog.apply"),
+      label: okLabel,
       callback: (event, button, dialog) => {
-        const checked = dialog.element.querySelector(
-          'input[name="pf2e-all-resist-choice"]:checked'
-        );
+        const checked = dialog.element.querySelector('input[name="pf2e-ar-choice"]:checked');
         return checked ? Number(checked.value) : null;
       },
     },
@@ -557,350 +864,178 @@ async function chooseResistance(actor, instances, resistance, resistanceValue, t
   });
 }
 
-async function postChatMessage({
-  targetActor,
-  targetName,
-  selectedType,
-  resistanceValue,
-  beforeTotal,
-  afterTotal,
-  applied,
-  mode,
-}) {
-  let show = true;
-  let privacy = "auto";
-  try {
-    show = game.settings.get(MODULE_ID, "showChatMessage");
-    privacy = game.settings.get(MODULE_ID, "chatPrivacy");
-  } catch (e) {
-    return;
+// ============== IWR wrapper ==============
+
+function wrapIWR(actor) {
+  const weaknesses = actor.attributes?.weaknesses ?? [];
+  const resistances = actor.attributes?.resistances ?? [];
+  const allElements = [...weaknesses, ...resistances];
+  const originals = new Map();
+  const originalTests = new Map();
+  const used = new Set();
+  for (const el of allElements) {
+    if (!el || typeof el.test !== "function") continue;
+    originalTests.set(el, el.test.bind(el));
   }
-  if (!show) return;
-
-  const typeLabel = damageTypeLabel(selectedType);
-  const typeColor = DAMAGE_COLORS[selectedType] ?? "#dddddd";
-  const modeLabel = mode === "auto" ? t("chat.autoSuffix") : "";
-
-  const appliedNote = applied
-    ? `<span style="color:${typeColor}; font-weight:700;">${typeLabel}</span>`
-    : `<span style="color:${typeColor}; font-weight:700;">${typeLabel}</span> <span style="opacity:.75;">${t("chat.notApplicable")}</span>`;
-
-  const beforeHtml = `<span class="pf2e-ar-chat-num">${beforeTotal}</span>`;
-  const afterHtml = `<span class="pf2e-ar-chat-num">${afterTotal}</span>`;
-
-  const content = `
-    <div class="pf2e-ar-chat">
-      <div class="pf2e-ar-chat-title">${t("chat.title", { value: resistanceValue })}${modeLabel}</div>
-      <div class="pf2e-ar-chat-row">
-        ${t("chat.appliedTo", { name: `<strong>${targetName}</strong>`, type: appliedNote })}
-      </div>
-      <div class="pf2e-ar-chat-row">
-        ${t("chat.damageChanged", { before: beforeHtml, after: afterHtml })}
-      </div>
-    </div>
-  `;
-
-  const messageData = {
-    content,
-    speaker: ChatMessage.getSpeaker({ alias: t("chat.speakerAlias") }),
-    flags: { [MODULE_ID]: { applied: true, selectedType, resistanceValue } },
+  for (const el of allElements) {
+    if (!el || typeof el.test !== "function") continue;
+    const originalFn = originalTests.get(el);
+    originals.set(el, el.test);
+    el.test = function (options) {
+      let res = false;
+      try { res = !!originalFn(options); } catch (e) { res = false; }
+      if (!res) return false;
+      if (el.type === "all-damage") {
+        const hasMoreSpecific = weaknesses.some((other) => {
+          if (other === el) return false;
+          if (other.ignored) return false;
+          if (other.type === "all-damage") return false;
+          if (used.has(other)) return false;
+          const tt = originalTests.get(other);
+          if (!tt) return false;
+          try { return !!tt(options); } catch (e) { return false; }
+        });
+        if (hasMoreSpecific) return false;
+      }
+      if (used.has(el)) return false;
+      used.add(el);
+      return true;
+    };
+  }
+  return function unwrap() {
+    for (const [el, orig] of originals) {
+      try { el.test = orig; } catch (e) {}
+    }
   };
-
-  let whisperToGM = false;
-  if (privacy === "gm") {
-    whisperToGM = true;
-  } else if (privacy === "auto") {
-    whisperToGM = !targetActor?.hasPlayerOwner;
-  }
-
-  if (whisperToGM) {
-    messageData.whisper = ChatMessage.getWhisperRecipients("GM").map((u) => u.id);
-  }
-
-  try {
-    await ChatMessage.create(messageData);
-  } catch (e) {
-    console.error(`[${MODULE_ID}] failed to post chat message`, e);
-  }
 }
 
+function shouldFixIWR() {
+  try { return game.settings.get(MODULE_ID, "errataIWR"); } catch (e) { return false; }
+}
+function isAllResEnabled() {
+  try { return game.settings.get(MODULE_ID, "allResEnabled"); } catch (e) { return true; }
+}
+async function plainCall(actor, original, params) {
+  return original.call(actor, params);
+}
+async function callOriginalWithIWRFix(actor, original, params) {
+  if (!shouldFixIWR()) return original.call(actor, params);
+  const instances = getDamageInstances(params?.damage);
+  if (instances.length < 2) return original.call(actor, params);
+  const unwrap = wrapIWR(actor);
+  try { return await original.call(actor, params); }
+  finally { unwrap(); }
+}
+
+// ============== Hooks ==============
+
 Hooks.once("init", () => {
-  try { console.log(`[${MODULE_ID}] init hook fired`); } catch (e) {}
   try { injectStyles(); } catch (e) { console.error(`[${MODULE_ID}] injectStyles at init failed`, e); }
+
+  try {
+    game.settings.register(MODULE_ID, "allResEnabled", {
+      name: `${MODULE_ID}.settings.allResEnabled.name`,
+      hint: `${MODULE_ID}.settings.allResEnabled.hint`,
+      scope: "world", config: true, type: Boolean, default: true,
+    });
+  } catch (e) { console.error(`[${MODULE_ID}] register allResEnabled failed`, e); }
 
   try {
     game.settings.register(MODULE_ID, "autoApplyBest", {
       name: `${MODULE_ID}.settings.autoApplyBest.name`,
       hint: `${MODULE_ID}.settings.autoApplyBest.hint`,
-      scope: "world",
-      config: true,
-      type: Boolean,
-      default: false,
+      scope: "client", config: true, type: Boolean, default: false,
     });
-  } catch (e) {
-    console.error(`[${MODULE_ID}] register autoApplyBest failed`, e);
-  }
+  } catch (e) { console.error(`[${MODULE_ID}] register autoApplyBest failed`, e); }
 
   try {
     game.settings.register(MODULE_ID, "showChatMessage", {
       name: `${MODULE_ID}.settings.showChatMessage.name`,
       hint: `${MODULE_ID}.settings.showChatMessage.hint`,
-      scope: "world",
-      config: true,
-      type: Boolean,
-      default: true,
+      scope: "world", config: true, type: Boolean, default: true,
     });
-  } catch (e) {
-    console.error(`[${MODULE_ID}] register showChatMessage failed`, e);
-  }
+  } catch (e) { console.error(`[${MODULE_ID}] register showChatMessage failed`, e); }
 
   try {
-    game.settings.register(MODULE_ID, "chatPrivacy", {
-      name: `${MODULE_ID}.settings.chatPrivacy.name`,
-      hint: `${MODULE_ID}.settings.chatPrivacy.hint`,
-      scope: "world",
-      config: true,
-      type: String,
-      choices: {
-        auto: `${MODULE_ID}.settings.chatPrivacy.choices.auto`,
-        public: `${MODULE_ID}.settings.chatPrivacy.choices.public`,
-        gm: `${MODULE_ID}.settings.chatPrivacy.choices.gm`,
-      },
-      default: "auto",
+    game.settings.register(MODULE_ID, "errataIWR", {
+      name: `${MODULE_ID}.settings.errataIWR.name`,
+      hint: `${MODULE_ID}.settings.errataIWR.hint`,
+      scope: "world", config: true, type: Boolean, default: true,
     });
-  } catch (e) {
-    console.error(`[${MODULE_ID}] register chatPrivacy failed`, e);
-  }
+  } catch (e) { console.error(`[${MODULE_ID}] register errataIWR failed`, e); }
+
+  try {
+    game.settings.register(MODULE_ID, "debugIWRType", {
+      name: `${MODULE_ID}.settings.debugIWRType.name`,
+      hint: `${MODULE_ID}.settings.debugIWRType.hint`,
+      scope: "client", config: true, type: Boolean, default: false,
+    });
+  } catch (e) { console.error(`[${MODULE_ID}] register debugIWRType failed`, e); }
 });
 
 Hooks.once("ready", () => {
-  try { console.log(`[${MODULE_ID}] ready hook fired`); } catch (e) {}
   try { injectStyles(); } catch (e) { console.error(`[${MODULE_ID}] injectStyles at ready failed`, e); }
 
   try {
     const ActorClass = CONFIG?.Actor?.documentClass;
-
     if (!ActorClass?.prototype?.applyDamage) {
       console.error(`[${MODULE_ID}] Could not find Actor.applyDamage`);
       ui.notifications.error(t("notifications.notFound"));
       return;
     }
-
     const proto = ActorClass.prototype;
-
-    if (proto[PATCHED]) {
-      console.log(`[${MODULE_ID}] already patched`);
-      return;
-    }
-
+    if (proto[PATCHED]) return;
     const originalApplyDamage = proto.applyDamage;
 
     proto.applyDamage = async function (params = {}) {
       try {
-        if (this[IN_PROGRESS]) {
-          return originalApplyDamage.call(this, params);
+        if (this[IN_PROGRESS]) return plainCall(this, originalApplyDamage, params);
+
+        if (!isAllResEnabled()) {
+          return callOriginalWithIWRFix(this, originalApplyDamage, params);
         }
 
         const damage = params?.damage;
         const rollOptions = params?.rollOptions;
 
         if (
-          !damage ||
-          typeof damage !== "object" ||
+          !damage || typeof damage !== "object" ||
           !Array.isArray(damage.instances) ||
-          params.final ||
-          params.skipIWR
+          params.final || params.skipIWR
         ) {
-          return originalApplyDamage.call(this, params);
+          return callOriginalWithIWRFix(this, originalApplyDamage, params);
         }
 
         const instances = getDamageInstances(damage);
         if (instances.length < 2) {
-          return originalApplyDamage.call(this, params);
+          return callOriginalWithIWRFix(this, originalApplyDamage, params);
         }
 
-        const allResistances = (this.attributes?.resistances ?? []).filter(
-          (r) => r?.type === "all-damage" && !r.ignored
+        const hasAnyRes = (this.attributes?.resistances ?? []).some(
+          r => !r.ignored && (Number(r.value) || 0) > 0
         );
-
-        if (!allResistances.length) {
-          return originalApplyDamage.call(this, params);
-        }
-
-        const resistance = allResistances.reduce((best, current) =>
-          (Number(current.value) || 0) > (Number(best.value) || 0) ? current : best
-        );
-        const resistanceValue = Number(resistance.value) || 0;
-        if (resistanceValue <= 0) {
-          return originalApplyDamage.call(this, params);
-        }
-
-        const anyApplies = instances.some((inst) =>
-          resistanceAppliesTo(resistance, inst)
-        );
-        if (!anyApplies) {
-          log("All-resist does not apply to any instance (all are exceptions), skipping");
-          return originalApplyDamage.call(this, params);
-        }
-
-        const targetName = params.token?.name ?? this.name;
-
-        let autoApply = false;
-        try {
-          autoApply = game.settings.get(MODULE_ID, "autoApplyBest");
-        } catch (e) {
-          autoApply = false;
-        }
-
-        let selectedInstance;
-        let selectedChoice;
-        let baselineTotal = 0;
-
-        if (autoApply) {
-          const { baseline, sortedChoices } = computeChoices(
-            this,
-            instances,
-            resistance,
-            resistanceValue,
-            damage,
-            rollOptions
-          );
-          baselineTotal = baseline.finalTotal;
-          const best = pickBestChoice(sortedChoices);
-          if (!best) {
-            return originalApplyDamage.call(this, params);
-          }
-          selectedInstance = instances[best.index];
-          selectedChoice = best;
-          log("Auto-selected best resistance", {
-            target: targetName,
-            selectedType: best.type,
-            finalTotal: best.outcome.finalTotal,
-          });
-        } else {
-          const { baseline } = computeChoices(
-            this,
-            instances,
-            resistance,
-            resistanceValue,
-            damage,
-            rollOptions
-          );
-          baselineTotal = baseline.finalTotal;
-
-          let selectedIndex;
-          try {
-            selectedIndex = await chooseResistance(
-              this,
-              instances,
-              resistance,
-              resistanceValue,
-              targetName,
-              damage,
-              rollOptions
-            );
-          } catch (e) {
-            log("Dialog threw, falling back to best choice", e);
-            selectedIndex = null;
-          }
-
-          if (selectedIndex === null || selectedIndex === undefined) {
-            log("Dialog closed, auto-selecting best resistance.");
-            const { sortedChoices } = computeChoices(
-              this,
-              instances,
-              resistance,
-              resistanceValue,
-              damage,
-              rollOptions
-            );
-            const best = pickBestChoice(sortedChoices);
-            if (!best) {
-              return originalApplyDamage.call(this, params);
-            }
-            selectedInstance = instances[best.index];
-            selectedChoice = best;
-          } else {
-            selectedInstance = instances[selectedIndex];
-            if (selectedInstance) {
-              const outcome = computeOutcome(
-                this,
-                instances,
-                selectedInstance.type,
-                resistance,
-                resistanceValue,
-                damage,
-                rollOptions
-              );
-              const allApplies = resistanceAppliesTo(resistance, selectedInstance);
-              selectedChoice = {
-                type: selectedInstance.type,
-                outcome,
-                allApplies,
-              };
-            }
-          }
-        }
-
-        if (!selectedInstance) {
-          return originalApplyDamage.call(this, params);
+        if (!hasAnyRes) {
+          return callOriginalWithIWRFix(this, originalApplyDamage, params);
         }
 
         this[IN_PROGRESS] = true;
-
-        const originalType = resistance.type;
-        resistance.type = selectedInstance.type;
-
         try {
-          const result = await originalApplyDamage.call(this, params);
-          log("Applied errata resistance", {
-            target: targetName,
-            selectedType: selectedInstance.type,
-            resistance: resistanceValue,
-          });
-
-          if (selectedChoice) {
-            await postChatMessage({
-              targetActor: this,
-              targetName,
-              selectedType: selectedInstance.type,
-              resistanceValue,
-              beforeTotal: baselineTotal,
-              afterTotal: selectedChoice.outcome.finalTotal,
-              applied: selectedChoice.allApplies !== false,
-              mode: autoApply ? "auto" : "manual",
-            });
-          }
-
-          return result;
-        } catch (e) {
-          console.error(`[${MODULE_ID}] originalApplyDamage failed`, e);
-          ui.notifications.error(t("notifications.errorDamage"));
-          throw e;
+          return await runSequentialDialogs(
+            this, originalApplyDamage, params, instances, damage, rollOptions
+          );
         } finally {
-          resistance.type = originalType;
           this[IN_PROGRESS] = false;
         }
       } catch (e) {
         console.error(`[${MODULE_ID}] applyDamage wrapper failed`, e);
+        ui.notifications.error(t("notifications.errorDamage"));
         return originalApplyDamage.call(this, params);
       }
     };
 
-    Object.defineProperty(proto, PATCHED, {
-      value: true,
-      configurable: false,
-      enumerable: false,
-    });
-
-    log("patched Actor.applyDamage successfully");
-    try {
-      ui.notifications.info(t("notifications.active"));
-    } catch (e) {}
+    Object.defineProperty(proto, PATCHED, { value: true, configurable: false, enumerable: false });
   } catch (e) {
     console.error(`[${MODULE_ID}] ready hook failed`, e);
-    try {
-      ui.notifications.error(t("notifications.errorLoad"));
-    } catch (e2) {}
+    try { ui.notifications.error(t("notifications.errorLoad")); } catch (e2) {}
   }
 });
