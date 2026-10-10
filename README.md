@@ -52,8 +52,8 @@ Found in **Settings → Game Settings → PF2e All Damage Resistance (Errata)**.
 | **Apply Resistance to All Damage rule (errata)** | on | Toggle the all-res rule. When off, the module only fixes the weakness/resistance bug. |
 | **Automatically select best resistance** | on | Don't show the dialog. Auto-pick the resistance target that yields the lowest total damage. |
 | **Show IWR breakdown in chat** | on | Add the info icon with applied resistances and weaknesses to the PF2e damage card. |
-| **Apply weakness/resistance once per effect (errata)** | on | Fix the bug where weakness/resistance triggers once per damage instance. |
-| **Debug: show applied damage type** | off | Append the damage type each resistance was applied to. Debug only. |
+| **Apply weakness/resistance once per effect (errata)** | on | Fixed an issue where vulnerability and resistance triggered for every damage type. |
+| **Debug: show applied damage type** | off | Append the damage type each resistance was applied to. Debug. |
 
 ## Usage
 
@@ -129,8 +129,8 @@ pf2e-all-resistance-errata/
 | **Применять правило сопротивления всему урону (эррата)** | вкл | Включает или выключает правило all-res. Если выключить — модуль только исправляет баг с weakness/resistance. |
 | **Автоматически выбирать лучшее сопротивление** | вкл | Не показывать диалог. Модуль сам применяет сопротивление к типу урона, дающему наименьший итоговый урон. |
 | **Показывать разбивку IWR в чате** | вкл | Добавляет в PF2e-сообщение о применении урона значок с деталями применённых сопротивлений и уязвимостей. |
-| **Применять weakness/resistance один раз к эффекту (эррата)** | вкл | Исправляет баг, при котором weakness/resistance срабатывали на каждый инстанс урона отдельно. |
-| **Debug: показывать к какому типу урона применено** | выкл | В тултипе чата после названия сопротивления указывать тип урона, к которому оно было применено. Только для отладки. |
+| **Применять weakness/resistance один раз к эффекту (эррата)** | вкл | Исправляет баг, при котором weakness/resistance срабатывали на каждый тип урона отдельно. |
+| **Debug: показывать к какому типу урона применено** | выкл | В тултипе чата после названия сопротивления указывать тип урона, к которому оно было применено. Для отладки. |
 
 ## Использование
 
